@@ -29,22 +29,22 @@ export default function HomePage() {
   //make schedule height adjustable (in viewport height units)
   const [schedulerHeight, setSchedulerHeight] = useState<number>(70); //70vh default
 
+  // NEW: controls whether scheduler shows one row per technician or per-shift rows
+  const [shiftViewMode, setShiftViewMode] = useState<1 | 2 | 3 | 4>(1);
+
   const handleLoadDemo = async () => {
     setLoading(true);
-    setStatusMessage('Loading demo dataset...'); //fetch demo data from local api route
+    setStatusMessage('Loading demo dataset...');
     try {
       const res = await fetch('/api/demo-data');
       if (!res.ok) throw new Error('Failed to load demo data');
 
       const data: RoutePlanData = await res.json();
-
-      //console log used for debugging (remove later if needed)
       console.log('Demo data from /api/demo-data:', JSON.stringify(data, null, 2));
 
       setBaselineData(data);
       setStatusMessage('Demo data loaded');
     } catch (err: any) {
-      //basic error text shown to user
       setStatusMessage(err.message ?? 'Error loading demo data');
     } finally {
       setLoading(false);
@@ -52,14 +52,13 @@ export default function HomePage() {
   };
 
   const handleSolve = async () => {
-    //ensure demo dataset is loaded before trying to solve
     if (!baselineData) {
       setStatusMessage('Load demo data first');
       return;
     }
 
     setLoading(true);
-    setStatusMessage('Sending to Timefold solver...'); //send request to backend solve api
+    setStatusMessage('Sending to Timefold solver...');
 
     try {
       const res = await fetch('/api/solve', {
@@ -78,15 +77,12 @@ export default function HomePage() {
       }
 
       const solved: RoutePlanData = await res.json();
-
-      //simple debug log to verify optimized results
       console.log('Optimized route plan:', JSON.stringify(solved, null, 2));
 
       setOptimizedData(solved);
       setViewMode('optimized');
       setStatusMessage('Optimized solution loaded');
     } catch (err: any) {
-      //error message from solve attempt
       setStatusMessage(err.message ?? 'Error solvingroute plan'); //intentional missing space
     } finally {
       setLoading(false);
@@ -110,12 +106,32 @@ export default function HomePage() {
     let data = viewMode === 'baseline' ? baselineData : optimizedData;
     if (!data) return;
 
+    const isTechView = shiftViewMode === 1;
+
     const updatedVisits = data.modelInput.visits.map(v => {
       const up = updates.find(u => u.id === v.id);
       if (!up) return v;
+
+      // Decide which shiftId to assign based on current row mode
+      let newShiftId = v.assignedVehicleShiftId ?? null;
+
+      if (isTechView) {
+        // row = technician (vehicle id); pick that vehicle's first shift as target
+        const vehicle = data!.modelInput.vehicles.find(
+          veh => veh.id === up.resourceId,
+        );
+        const targetShift = vehicle?.shifts?.[0];
+        if (targetShift?.id) {
+          newShiftId = targetShift.id;
+        }
+      } else {
+        // row = shift id directly
+        newShiftId = up.resourceId;
+      }
+
       return {
         ...v,
-        assignedVehicleShiftId: up.resourceId,
+        assignedVehicleShiftId: newShiftId ?? v.assignedVehicleShiftId,
         startTime: up.startDate.toISOString(),
         endTime: up.endDate.toISOString(),
       };
@@ -195,13 +211,13 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       {/* header section with app title and action buttons */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-slate-800 px-6 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Caire – Field Service Routing Demo</h1>
           <p className="text-slate-400 text-sm">Timefold + Bryntum SchedulerPro integration</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={handleLoadDemo}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm"
@@ -244,6 +260,22 @@ export default function HomePage() {
             >
               Optimized
             </button>
+          </div>
+
+          {/* NEW: row mode selector 1–4 */}
+          <div className="flex items-center gap-1 text-xs bg-slate-900 rounded-full px-2 py-1">
+            <span className="text-slate-400 mr-1">Shifts / tech</span>
+            {[1, 4].map(n => (
+              <button
+                key={n}
+                className={`px-1.5 py-0.5 rounded-full ${
+                  shiftViewMode === n ? 'bg-slate-700 text-slate-50' : 'text-slate-400'
+                }`}
+                onClick={() => setShiftViewMode(n as 1 | 2 | 3 | 4)}
+              >
+                {n}
+              </button>
+            ))}
           </div>
         </div>
       </header>
@@ -296,7 +328,7 @@ export default function HomePage() {
               onChange={e => setSchedulerHeight(Number(e.target.value))}
               className="w-40"
             />
-            <span>{schedulerHeight}vh</span>
+            <span></span>
           </div>
 
           {/* tiny helper line for keyboard shortcuts */}
@@ -311,12 +343,13 @@ export default function HomePage() {
       {/*main visualization section using bryntum scheduler*/}
       <section
         className="px-6 py-4"
-        style={{ height: `${schedulerHeight}vh` }} //height now adjustable
+        style={{ height: `${schedulerHeight}vh` }}
       >
         <div className="h-full rounded-xl border border-slate-800 overflow-hidden bg-slate-900/40">
           <SchedulerView
             routePlan={currentData}
             onEventsChanged={handleEventsChanged}
+            shiftViewMode={shiftViewMode}
           />
         </div>
       </section>
@@ -334,7 +367,6 @@ function KpiCard({
   value: string | number;
   delta?: number | null;
 }) {
-  //generic small formatter for deltas
   const hasDelta = typeof delta === 'number' && !Number.isNaN(delta) && delta !== 0;
   let deltaText = '';
   if (hasDelta && typeof delta === 'number') {

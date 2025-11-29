@@ -17,8 +17,8 @@ const BryntumSchedulerPro = dynamic(
 
 // simple resource record used by Bryntum Scheduler
 interface ResourceRecord {
-  id: string;
-  name: string;
+  id: string;      // row id in scheduler (vehicle id or shift id depending on mode)
+  name: string;    // technician name (may include shift label)
   vehicleId: string;
 }
 
@@ -26,7 +26,7 @@ interface ResourceRecord {
 // NOTE: use Date objects so scheduler can work with them directly
 interface EventRecord {
   id: string;
-  resourceId: string;
+  resourceId: string; // row id (vehicle or shift, depending on mode)
   name: string;
   startDate: Date;
   endDate: Date;
@@ -74,54 +74,83 @@ function lighten(hex: string, factor: number): string {
   return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
 }
 
-function buildResources(modelInput: ModelInput): ResourceRecord[] {
-  // creates a resource entry for each vehicle shift
+// -----------------------------------------------------------------------------
+// RESOURCE / EVENT BUILDERS
+// shiftViewMode = 1  => one row per technician (vehicle)
+// shiftViewMode > 1  => one row per shift (original behaviour, all shifts visible)
+// -----------------------------------------------------------------------------
+
+// technician view: one row per vehicle
+function buildTechResources(modelInput: ModelInput): ResourceRecord[] {
+  const resources: ResourceRecord[] = [];
+
+  for (const vehicle of modelInput.vehicles ?? []) {
+    resources.push({
+      id: vehicle.id,                    // row id = vehicle
+      name: vehicle.name ?? vehicle.id,  // technician name
+      vehicleId: vehicle.id,
+    });
+  }
+
+  return resources;
+}
+
+// shift view: one row per shift (may show a vehicle multiple times)
+function buildShiftResources(modelInput: ModelInput): ResourceRecord[] {
   const resources: ResourceRecord[] = [];
 
   for (const vehicle of modelInput.vehicles ?? []) {
     for (const shift of vehicle.shifts ?? []) {
       resources.push({
-        id: shift.id,
+        id: shift.id,                    // row id = shift
         name: vehicle.name ?? vehicle.id,
         vehicleId: vehicle.id,
       });
     }
   }
+
   return resources;
 }
 
-// Build events and also compute min/max time span
-function buildEvents(modelInput: ModelInput): {
+// technician view events: map all shift ids to their vehicle row
+function buildTechEvents(modelInput: ModelInput): {
   events: EventRecord[];
   minStart: Date | null;
   maxEnd: Date | null;
 } {
-  // maps assigned visits into scheduler events
   const events: EventRecord[] = [];
   let minStart: number | null = null;
   let maxEnd: number | null = null;
 
+  // map shiftId -> vehicleId
+  const shiftToVehicle = new Map<string, string>();
+  for (const vehicle of modelInput.vehicles ?? []) {
+    for (const shift of vehicle.shifts ?? []) {
+      shiftToVehicle.set(shift.id, vehicle.id);
+    }
+  }
+
   for (const visit of modelInput.visits ?? []) {
     if (!visit.assignedVehicleShiftId || !visit.startTime || !visit.endTime) {
-      // unscheduled visit is skipped for optimized mode
       continue;
     }
 
     const start = new Date(visit.startTime);
     const end = new Date(visit.endTime);
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      continue;
-    }
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) continue;
 
     const startMs = start.getTime();
     const endMs = end.getTime();
     if (minStart === null || startMs < minStart) minStart = startMs;
     if (maxEnd === null || endMs > maxEnd) maxEnd = endMs;
 
+    const vehicleId =
+      shiftToVehicle.get(visit.assignedVehicleShiftId) ??
+      visit.assignedVehicleShiftId;
+
     events.push({
       id: visit.id,
-      resourceId: visit.assignedVehicleShiftId,
+      resourceId: vehicleId, // row = technician
       name: visit.name ?? visit.id,
       startDate: start,
       endDate: end,
@@ -135,6 +164,48 @@ function buildEvents(modelInput: ModelInput): {
   };
 }
 
+// shift view events: resourceId is the actual shiftId
+function buildShiftEvents(modelInput: ModelInput): {
+  events: EventRecord[];
+  minStart: Date | null;
+  maxEnd: Date | null;
+} {
+  const events: EventRecord[] = [];
+  let minStart: number | null = null;
+  let maxEnd: number | null = null;
+
+  for (const visit of modelInput.visits ?? []) {
+    if (!visit.assignedVehicleShiftId || !visit.startTime || !visit.endTime) {
+      continue;
+    }
+
+    const start = new Date(visit.startTime);
+    const end = new Date(visit.endTime);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) continue;
+
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    if (minStart === null || startMs < minStart) minStart = startMs;
+    if (maxEnd === null || endMs > maxEnd) maxEnd = endMs;
+
+    events.push({
+      id: visit.id,
+      resourceId: visit.assignedVehicleShiftId, // row = shift
+      name: visit.name ?? visit.id,
+      startDate: start,
+      endDate: end,
+    });
+  }
+
+  return {
+    events,
+    minStart: minStart !== null ? new Date(minStart) : null,
+    maxEnd: maxEnd !== null ? new Date(maxEnd) : null,
+  };
+}
+
+// -----------------------------------------------------------------------------
+
 interface SchedulerViewProps {
   routePlan: RoutePlanData | null;
   // allow parent to be notified when events are moved (drag & drop)
@@ -144,16 +215,20 @@ interface SchedulerViewProps {
     startDate: Date;
     endDate: Date;
   }[]) => void;
+  // NEW: controls whether we show 1 row per technician or per-shift rows
+  shiftViewMode?: 1 | 2 | 3 | 4;
 }
 
 export default function SchedulerView({
   routePlan,
   onEventsChanged,
+  shiftViewMode = 1,
 }: SchedulerViewProps) {
-  // Compute Bryntum resources/events only when plan changes
+  const showPerTechnician = shiftViewMode === 1;
+
+  // Compute Bryntum resources/events only when plan or mode changes
   const { resources, events, startDate, endDate } = useMemo(() => {
     if (!routePlan) {
-      // fallback empty state for first load
       const now = new Date();
       return {
         resources: [] as ResourceRecord[],
@@ -163,8 +238,15 @@ export default function SchedulerView({
       };
     }
 
-    const resources = buildResources(routePlan.modelInput);
-    const { events, minStart, maxEnd } = buildEvents(routePlan.modelInput);
+    const modelInput = routePlan.modelInput;
+
+    const { events, minStart, maxEnd } = showPerTechnician
+      ? buildTechEvents(modelInput)
+      : buildShiftEvents(modelInput);
+
+    const resources = showPerTechnician
+      ? buildTechResources(modelInput)
+      : buildShiftResources(modelInput);
 
     // Time range is based on event span if possible, otherwise shift windows
     let s: Date;
@@ -175,9 +257,9 @@ export default function SchedulerView({
       s = new Date(minStart.getTime() - padMs);
       e = new Date(maxEnd.getTime() + padMs);
     } else {
-      const allShiftTimes = routePlan.modelInput.vehicles
+      const allShiftTimes = modelInput.vehicles
         .flatMap(v => v.shifts)
-        .flatMap(s => [s.minStartTime, s.maxEndTime])
+        .flatMap(sft => [sft.minStartTime, sft.maxEndTime])
         .filter(Boolean) as string[];
 
       const startDateStr = allShiftTimes[0] ?? new Date().toISOString();
@@ -194,7 +276,7 @@ export default function SchedulerView({
       startDate: s,
       endDate: e,
     };
-  }, [routePlan]);
+  }, [routePlan, showPerTechnician]);
 
   if (!routePlan) {
     return (
@@ -218,7 +300,7 @@ export default function SchedulerView({
       columns={[
         { type: 'resourceInfo', text: 'Technician', width: 220 },
       ]}
-      // Stylish pill-shaped events with per-technician colors
+      // Stylish pill-shaped events with per-row colors
       eventRenderer={({ eventRecord }: any) => {
         const base = colorForResource(eventRecord.resourceId);
         const lighter = lighten(base, 0.25);
