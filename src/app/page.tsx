@@ -77,7 +77,7 @@ export default function HomePage() {
 
       const solved: RoutePlanData = await res.json();
 
-      //Log the solved / opimized result from Timefold (comment out in production)
+      //Log the solved / optimized result from Timefold (comment out in production)
       console.log(
         'Optimized route plan from /api/solve:',
         JSON.stringify(solved, null, 2),
