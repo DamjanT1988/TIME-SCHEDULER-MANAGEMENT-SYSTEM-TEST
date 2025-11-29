@@ -2,8 +2,19 @@
 'use client';
 
 import { useMemo } from 'react';
-import { BryntumSchedulerPro } from '@bryntum/schedulerpro-react';
+//import { BryntumSchedulerPro } from '@bryntum/schedulerpro-react';
 import type { RoutePlanData, ModelInput, Vehicle, Visit } from '@/types/timefold';
+//fix
+import dynamic from 'next/dynamic';
+
+//dynamically import bryntum so it only runs on client side, avoids ssr issues
+const BryntumSchedulerPro = dynamic(
+  () =>
+    import('@bryntum/schedulerpro-react').then(
+      (m) => m.BryntumSchedulerPro,
+    ),
+  { ssr: false },
+);
 
 //simple resource record used by bryntum scheduler
 interface ResourceRecord {
