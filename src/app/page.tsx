@@ -26,6 +26,9 @@ export default function HomePage() {
   //message used to show loading state or errors
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  //make schedule height adjustable (in viewport height units)
+  const [schedulerHeight, setSchedulerHeight] = useState<number>(70); //70vh default
+
   const handleLoadDemo = async () => {
     setLoading(true);
     setStatusMessage('Loading demo dataset...'); //fetch demo data from local api route
@@ -76,7 +79,7 @@ export default function HomePage() {
 
       const solved: RoutePlanData = await res.json();
 
-      //simple debug log to verify optimize results
+      //simple debug log to verify optimized results
       console.log('Optimized route plan:', JSON.stringify(solved, null, 2));
 
       setOptimizedData(solved);
@@ -176,7 +179,7 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      {/* Header section with app title and action buttons */}
+      {/* header section with app title and action buttons */}
       <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Caire – Field Service Routing Demo</h1>
@@ -199,7 +202,7 @@ export default function HomePage() {
             Solve schedule
           </button>
 
-          {/* Reset optimized result and go back to baseline */}
+          {/* reset optimized result and go back to baseline */}
           <button
             onClick={handleResetSolution}
             className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs text-slate-100 disabled:opacity-40"
@@ -254,11 +257,28 @@ export default function HomePage() {
               />
             </div>
           )}
+
+          {/* slider to adjust schedule height */}
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span>Schedule height</span>
+            <input
+              type="range"
+              min={40}
+              max={90}
+              value={schedulerHeight}
+              onChange={e => setSchedulerHeight(Number(e.target.value))}
+              className="w-40"
+            />
+            <span></span>
+          </div>
         </div>
       </section>
 
       {/*main visualization section using bryntum scheduler*/}
-      <section className="flex-1 min-h-0 px-6 py-4">
+      <section
+        className="px-6 py-4"
+        style={{ height: `${schedulerHeight}vh` }}
+      >
         <div className="h-full rounded-xl border border-slate-800 overflow-hidden bg-slate-900/40">
           <SchedulerView
             routePlan={currentData}
