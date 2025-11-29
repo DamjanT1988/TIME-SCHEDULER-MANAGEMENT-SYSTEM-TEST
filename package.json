@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@bryntum/schedulerpro": "npm:@bryntum/schedulerpro-trial@^7.0.0",
+    "@bryntum/schedulerpro-react": "^7.0.0",
     "next": "16.0.5",
     "react": "19.2.0",
     "react-dom": "19.2.0"
