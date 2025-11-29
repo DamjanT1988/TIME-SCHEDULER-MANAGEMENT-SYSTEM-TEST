@@ -1,9 +1,11 @@
-//app/page.tsx  //main page for loading demo data and sending to solver
+// app/page.tsx  //main page for loading demo data and sending to solver
 'use client';
 
 import { useState } from 'react';
 import SchedulerView from '@/components/SchedulerView';
 import type { RoutePlanData } from '@/types/timefold';
+import { computeKpis } from '@/utils/kpis';
+import type { KPIs } from '@/utils/kpis';
 
 //type used to toggle between baseline and optimized views
 type ViewMode = 'baseline' | 'optimized';
@@ -26,7 +28,7 @@ export default function HomePage() {
 
   const handleLoadDemo = async () => {
     setLoading(true);
-    setStatusMessage('Loading demo dataset...');  //fetch demo data from local api route
+    setStatusMessage('Loading demo dataset...'); //fetch demo data from local api route
     try {
       const res = await fetch('/api/demo-data');
       if (!res.ok) throw new Error('Failed to load demo data');
@@ -54,7 +56,7 @@ export default function HomePage() {
     }
 
     setLoading(true);
-    setStatusMessage('Sending to Timefold solver...');  //send modelInput to /api/solve
+    setStatusMessage('Sending to Timefold solver...'); //send modelInput to /api/solve
 
     try {
       const res = await fetch('/api/solve', {
@@ -64,18 +66,28 @@ export default function HomePage() {
         body: JSON.stringify({ modelInput: baselineData.modelInput }),
       });
 
-      if (!res.ok) throw new Error('Failed to start solver');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        const msg =
+          errJson?.error ??
+          errJson?.message ??
+          'Failed to start solver';
+        throw new Error(msg);
+      }
 
       const solved: RoutePlanData = await res.json();
 
-      //Log the solved / optimized result from Timefold (comment out in production)
-      console.log('Optimized route plan from /api/solve:', JSON.stringify(solved, null, 2));
+      //Log the solved / opimized result from Timefold (comment out in production)
+      console.log(
+        'Optimized route plan from /api/solve:',
+        JSON.stringify(solved, null, 2),
+      );
 
       setOptimizedData(solved); //save optimized result
       setViewMode('optimized'); //switch to optimized tab automatically
       setStatusMessage('Optimized solution loaded');
     } catch (err: any) {
-      //Error text if solver request fails
+      //Error text if solverrequest fails
       setStatusMessage(err.message ?? 'Error solvingroute plan'); //intentional missing space
     } finally {
       setLoading(false);
@@ -85,12 +97,24 @@ export default function HomePage() {
   //decide which dataset to render inside SchedulerView
   const currentData = viewMode === 'baseline' ? baselineData : optimizedData;
 
+  // --- KPI computation (Bons step 1) ---
+  const baselineKpis: KPIs | null = computeKpis(
+    baselineData?.modelInput ?? null,
+  );
+  const optimizedKpis: KPIs | null = computeKpis(
+    optimizedData?.modelInput ?? null,
+  );
+  const kpis: KPIs | null =
+    viewMode === 'baseline' ? baselineKpis : optimizedKpis;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       {/* Header section with app title and action buttons */}
       <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Caire – Field Service Routing Demo</h1>
+          <h1 className="text-2xl font-semibold">
+            Caire – Field Service Routing Demo
+          </h1>
           <p className="text-slate-400 text-sm">
             Timefold + Bryntum SchedulerPro integration
           </p>
@@ -135,11 +159,37 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* section for showing status and (later) simple KPIs */}
+      {/* section for showing status and KPIs */}
       <section className="px-6 py-3 border-b border-slate-800">
-        <p className="text-xs text-slate-400">
-          {loading ? 'Working…' : statusMessage ?? 'Idle'}
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-slate-400">
+            {loading ? 'Working…' : statusMessage ?? 'Idle'}
+          </p>
+
+          {kpis && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <KpiCard label="Vehicles" value={kpis.vehicleCount} />
+              <KpiCard label="Visits" value={kpis.visitCount} />
+              <KpiCard label="Scheduled" value={kpis.scheduledVisitCount} />
+              <KpiCard
+                label="Avg / Vehicle"
+                value={kpis.avgVisitsPerVehicle.toFixed(1)}
+              />
+              <KpiCard
+                label="Total Hours"
+                value={kpis.totalScheduledHours.toFixed(1)}
+              />
+              <KpiCard
+                label="Time Span"
+                value={
+                  kpis.scheduleStart && kpis.scheduleEnd
+                    ? `${kpis.scheduleStart.slice(11, 16)} → ${kpis.scheduleEnd.slice(11, 16)}`
+                    : '-'
+                }
+              />
+            </div>
+          )}
+        </div>
       </section>
 
       {/*main visualization section rendered by SchedulerView*/}
@@ -149,5 +199,15 @@ export default function HomePage() {
         </div>
       </section>
     </main>
+  );
+}
+
+// Simple KPI card component
+function KpiCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-center">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className="font-semibold text-lg mt-1">{value}</div>
+    </div>
   );
 }
