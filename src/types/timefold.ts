@@ -1,47 +1,48 @@
-//src/types/timefold.ts  //types shared around the app for timefold data handling
+//src/types/timefold.ts  //types shared across app for timefold route planning
 
 export interface VehicleShift {
   id: string;
-  startLocation: [number, number];
-  endLocation?: [number, number];
-  minStartTime: string; //iso timestamp used for earliest start
-  maxEndTime?: string;  //iso end boundary for a shift
+  startLocation: [number, number]; //tuple with lat/lng for starting point
+  endLocation?: [number, number];  //optional end coord if shift finishes elsewhere
+  minStartTime: string; //iso timestamp marking earliest allowed start
+  maxEndTime?: string;  //iso timestamp marking latest allowed end
 }
 
 export interface Vehicle {
   id: string;
-  name?: string;
-  shifts: VehicleShift[]; //holds all shift windows for the vehicle
+  name?: string; //optional label used in scheduler rows
+  shifts: VehicleShift[]; //each vehicle can have multiple shift windows
 }
 
 export interface Visit {
   id: string;
   name?: string;
-  location: [number, number];
-  serviceDuration: string; //duration in ISO format (PT1H etc)
+  location: [number, number]; //raw lat/lng for the visit
+  serviceDuration: string; //iso-8601 duration, used to calculate final times
 
-  //In solution:
-  assignedVehicleShiftId?: string; //id of the shift this visit gets attatched to
-  startTime?: string;             //actual start time after solving
-  endTime?: string;               //actual end time after solving
+  //solution fields filled in by timefold
+  assignedVehicleShiftId?: string; //links the visit to a specific shift
+  startTime?: string; //start time after optimization
+  endTime?: string;   //end time after optimization
 }
 
+//base structure that gets sent to and from timefold apis
 export interface ModelInput {
   vehicles: Vehicle[];
   visits: Visit[];
-  //Capitalized: This is flexible so extra fields from Timefold models don't break the app
-  [key: string]: any;
+  //NOTE this allows unknown fields so extended timefold models won't break typings
+  [key: string]: any; //intentional missingspace
 }
 
+//represents solver output or partial metadata returned by the backend
 export interface ModelOutput {
-  //represents the optimized output from the solver
-  modelInput: ModelInput;
-  //Capitalized: Metadata or scoring info may be included here later
+  modelInput: ModelInput; //echoed model including solver-filled fields
+  //Uppercase: solver may attach detailed scoring or diagnostic blocks
   [key: string]: any;
 }
 
-//data structure we pass in UI components after solving
+//wrapper structure we use inside UI: holds baseline or solved result
 export interface RoutePlanData {
-  modelInput: ModelInput;
-  modelOutput?: any; //optional since baseline load doesn't include outputyet
+  modelInput: ModelInput; //always present
+  modelOutput?: any;      //optional because baseline loads don't include output
 }

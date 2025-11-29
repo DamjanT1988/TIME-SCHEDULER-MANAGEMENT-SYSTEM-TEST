@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'; //bring in useEffect for keyboard shortcuts
 import SchedulerView from '@/components/SchedulerView';
+import MapView from '@/components/MapView';
 import type { RoutePlanData } from '@/types/timefold';
 import { computeKpis } from '@/utils/kpis';
 import type { KPIs } from '@/utils/kpis';
@@ -27,9 +28,9 @@ export default function HomePage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   //make schedule height adjustable (in viewport height units)
-  const [schedulerHeight, setSchedulerHeight] = useState<number>(70); //70vh default
+  const [schedulerHeight, setSchedulerHeight] = useState<number>(60); //60vh default
 
-  // NEW: controls whether scheduler shows one row per technician or per-shift rows
+  //controls whether scheduler shows one row per technician or per-shift rows
   const [shiftViewMode, setShiftViewMode] = useState<1 | 2 | 3 | 4>(1);
 
   const handleLoadDemo = async () => {
@@ -185,7 +186,7 @@ export default function HomePage() {
     return () => window.removeEventListener('keydown', handler);
   }, [baselineData, optimizedData, loading]);
 
-  //determine which dataset to feed into scheduler
+  //determine which dataset to feed into scheduler/map
   const currentData = viewMode === 'baseline' ? baselineData : optimizedData;
 
   //compute kpis based on current dataset
@@ -262,7 +263,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* NEW: row mode selector 1–4 */}
+          {/* row mode selector 1–4 */}
           <div className="flex items-center gap-1 text-xs bg-slate-900 rounded-full px-2 py-1">
             <span className="text-slate-400 mr-1">Shifts / tech</span>
             {[1, 4].map(n => (
@@ -328,7 +329,7 @@ export default function HomePage() {
               onChange={e => setSchedulerHeight(Number(e.target.value))}
               className="w-40"
             />
-            <span></span>
+            <span>(slide right to increase)</span>
           </div>
 
           {/* tiny helper line for keyboard shortcuts */}
@@ -340,7 +341,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/*main visualization section using bryntum scheduler*/}
+      {/* main visualization section using bryntum scheduler */}
       <section
         className="px-6 py-4"
         style={{ height: `${schedulerHeight}vh` }}
@@ -351,6 +352,23 @@ export default function HomePage() {
             onEventsChanged={handleEventsChanged}
             shiftViewMode={shiftViewMode}
           />
+        </div>
+      </section>
+
+      {/* map view section (Bonus Step 5: React Leaflet) */}
+      <section className="px-6 pb-6">
+        <div className="h-80 rounded-xl border border-slate-800 overflow-hidden bg-slate-900/40">
+          <div className="border-b border-slate-800 px-4 py-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-200">
+              Visit map (color per technician)
+            </span>
+            <span className="text-[10px] text-slate-500">
+              Data source: {viewMode === 'baseline' ? 'Baseline' : 'Optimized'}
+            </span>
+          </div>
+          <div className="h-full">
+            <MapView routePlan={currentData} />
+          </div>
         </div>
       </section>
     </main>
