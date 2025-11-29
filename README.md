@@ -1,6 +1,6 @@
 # CAIRE Field Service Routing Demo
 
-This project implements the CAIRE full-stack work sample using Next.js, TypeScript, Timefold.ai, Bryntum SchedulerPro, and React Leaflet. It demonstrates baseline schedule visualization, optimization through the Timefold Route Plans API, KPI calculations, drag-and-drop edits, adjustable layout modes, fallback solver logic, and a geographic map layer showing all visits colored per technician. GitHub Copilot and ChatGPT were used to accelerate development, as encouraged in the assignment.
+This project implements the CAIRE full-stack work sample using Next.js, TypeScript, Timefold.ai, Bryntum SchedulerPro, and React Leaflet. It demonstrates baseline schedule visualization, optimization through the Timefold Route Plans API, KPI calculations, drag-and-drop edits, adjustable layout modes, fallback solver logic, and a geographic map layer showing all visits colored per technician. GitHub Copilot and ChatGPT were used to accelerate development, as encouraged in the assignment. The assignment took about 8 hours in one session (Saturday).
 
 -----------------------------------------------------------------------
 
