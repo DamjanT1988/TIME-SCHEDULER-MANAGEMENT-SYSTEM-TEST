@@ -306,7 +306,7 @@ export default function SchedulerView({
       events={events}
       eventStyle="colored"
       columns={[
-        { type: 'resourceInfo', text: 'Technician', width: 220 },
+        { type: 'resourceInfo', text: 'Technician', width: 220, showEventCount: false,   },
       ]}
       //stylish pill-shaped events with per-technician colors
       eventRenderer={({ eventRecord }: any) => {
