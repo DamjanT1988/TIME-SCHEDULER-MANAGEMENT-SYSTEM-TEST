@@ -32,6 +32,10 @@ export default function HomePage() {
       if (!res.ok) throw new Error('Failed to load demo data');
 
       const data: RoutePlanData = await res.json();
+
+      //logs  (comment out in production)
+      console.log('Demo data from /api/demo-data:', JSON.stringify(data, null, 2));
+
       setBaselineData(data); //put demo data into state
       setStatusMessage('Demo data loaded');
     } catch (err: any) {
@@ -63,6 +67,10 @@ export default function HomePage() {
       if (!res.ok) throw new Error('Failed to start solver');
 
       const solved: RoutePlanData = await res.json();
+
+      //Log the solved / optimized result from Timefold (comment out in production)
+      console.log('Optimized route plan from /api/solve:', JSON.stringify(solved, null, 2));
+
       setOptimizedData(solved); //save optimized result
       setViewMode('optimized'); //switch to optimized tab automatically
       setStatusMessage('Optimized solution loaded');
