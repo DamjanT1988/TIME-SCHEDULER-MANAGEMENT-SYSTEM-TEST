@@ -24,3 +24,10 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Make scheduler events pop on dark background */
+.b-sch-event {
+  background-color: #22c55e !important; /* Tailwind emerald-500 */
+  border-color: #16a34a !important;
+  color: #020617 !important;           /* near-black text */
+}

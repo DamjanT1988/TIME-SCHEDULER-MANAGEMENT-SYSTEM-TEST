@@ -9,9 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@bryntum/schedulerpro": "npm:@bryntum/schedulerpro-trial@^7.0.0",
+    "@bryntum/schedulerpro-react": "^7.0.0",
+    "leaflet": "^1.9.4",
     "next": "16.0.5",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
