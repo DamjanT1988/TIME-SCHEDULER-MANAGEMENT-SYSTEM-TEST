@@ -2,4 +2,4 @@
 
 import { SchedulerPro } from '@bryntum/schedulerpro';
 
-SchedulerPro.licenseKey = process.env.TIMEFOLD_API_KEY!;
+SchedulerPro.licenseKey = process.env.TIMEFOLD_API_KEY ?? '';
