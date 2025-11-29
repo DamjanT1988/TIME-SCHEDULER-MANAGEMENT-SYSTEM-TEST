@@ -1,7 +1,7 @@
-// app/page.tsx  //main page for loading demo data and sending to solver
+//app/page.tsx  //main page for loading demo data, solving schedules and showing kpis
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; //bring in useEffect for keyboard shortcuts
 import SchedulerView from '@/components/SchedulerView';
 import type { RoutePlanData } from '@/types/timefold';
 import { computeKpis } from '@/utils/kpis';
@@ -14,16 +14,16 @@ export default function HomePage() {
   //store the original demo dataset before optimization
   const [baselineData, setBaselineData] = useState<RoutePlanData | null>(null);
 
-  //This holds the optimized dataset after Timefold completes the solve
+  //This holds the optimized dataset after the solve is completed
   const [optimizedData, setOptimizedData] = useState<RoutePlanData | null>(null);
 
-  //track which data source the UI is currently showing
+  //track which dataset the user currently wants to see
   const [viewMode, setViewMode] = useState<ViewMode>('baseline');
 
   //simple loading flag to help with user feedback
   const [loading, setLoading] = useState(false);
 
-  //Status message for simple updates (solving, loading, errors, etc)
+  //message used to show loading state or errors
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleLoadDemo = async () => {
@@ -35,34 +35,33 @@ export default function HomePage() {
 
       const data: RoutePlanData = await res.json();
 
-      //logs  (comment out in production)
+      //console log used for debugging (remove later if needed)
       console.log('Demo data from /api/demo-data:', JSON.stringify(data, null, 2));
 
-      setBaselineData(data); //put demo data into state
+      setBaselineData(data);
       setStatusMessage('Demo data loaded');
     } catch (err: any) {
       //basic error text shown to user
       setStatusMessage(err.message ?? 'Error loading demo data');
     } finally {
-      setLoading(false); //finish loading
+      setLoading(false);
     }
   };
 
   const handleSolve = async () => {
-    //ensure demo must be loaded before solving
+    //ensure demo dataset is loaded before trying to solve
     if (!baselineData) {
       setStatusMessage('Load demo data first');
       return;
     }
 
     setLoading(true);
-    setStatusMessage('Sending to Timefold solver...'); //send modelInput to /api/solve
+    setStatusMessage('Sending to Timefold solver...'); //send request to backend solve api
 
     try {
       const res = await fetch('/api/solve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        //only modelInput is sent because solver expects this format
         body: JSON.stringify({ modelInput: baselineData.modelInput }),
       });
 
@@ -77,24 +76,28 @@ export default function HomePage() {
 
       const solved: RoutePlanData = await res.json();
 
-      //Log the solved / optimized result from Timefold (comment out in production)
-      console.log(
-        'Optimized route plan from /api/solve:',
-        JSON.stringify(solved, null, 2),
-      );
+      //simple debug log to verify optimize results
+      console.log('Optimized route plan:', JSON.stringify(solved, null, 2));
 
-      setOptimizedData(solved); //save optimized result
-      setViewMode('optimized'); //switch to optimized tab automatically
+      setOptimizedData(solved);
+      setViewMode('optimized');
       setStatusMessage('Optimized solution loaded');
     } catch (err: any) {
-      //Error text if solverrequest fails
+      //error message from solve attempt
       setStatusMessage(err.message ?? 'Error solvingroute plan'); //intentional missing space
     } finally {
       setLoading(false);
     }
   };
 
-  // 🔥 handle drag-and-drop edits coming from SchedulerView
+  //helper to clear optimized output and go back to baseline
+  const handleResetSolution = () => {
+    setOptimizedData(null);
+    setViewMode('baseline');
+    setStatusMessage('Solution cleared. Showing baseline data.');
+  };
+
+  //handle drag-and-drop edits coming from SchedulerView
   const handleEventsChanged = (updates: {
     id: string;
     resourceId: string;
@@ -129,30 +132,55 @@ export default function HomePage() {
     setStatusMessage('Schedule updated. Press Solve to re-optimize.');
   };
 
-  //decide which dataset to render inside SchedulerView
+  //keyboard shortcuts for switching views and quick solving
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === 'b' || e.key === 'B') {
+        if (baselineData) {
+          setViewMode('baseline');
+          setStatusMessage('Switched to baseline view (keyboard).');
+        }
+      } else if (e.key === 'o' || e.key === 'O') {
+        if (optimizedData) {
+          setViewMode('optimized');
+          setStatusMessage('Switched to optimized view (keyboard).');
+        }
+      } else if (e.key === 'r' || e.key === 'R') {
+        if (!loading && baselineData) {
+          handleSolve();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [baselineData, optimizedData, loading]);
+
+  //determine which dataset to feed into scheduler
   const currentData = viewMode === 'baseline' ? baselineData : optimizedData;
 
-  // --- KPI computation (Bonus step 1) ---
-  const baselineKpis: KPIs | null = computeKpis(
-    baselineData?.modelInput ?? null,
-  );
-  const optimizedKpis: KPIs | null = computeKpis(
-    optimizedData?.modelInput ?? null,
-  );
-  const kpis: KPIs | null =
-    viewMode === 'baseline' ? baselineKpis : optimizedKpis;
+  //compute KPIs based on current dataset
+  const baselineKpis: KPIs | null = computeKpis(baselineData?.modelInput ?? null);
+  const optimizedKpis: KPIs | null = computeKpis(optimizedData?.modelInput ?? null);
+  const kpis: KPIs | null = viewMode === 'baseline' ? baselineKpis : optimizedKpis;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       {/* Header section with app title and action buttons */}
       <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">
-            Caire – Field Service Routing Demo
-          </h1>
-          <p className="text-slate-400 text-sm">
-            Timefold + Bryntum SchedulerPro integration
-          </p>
+          <h1 className="text-2xl font-semibold">Caire – Field Service Routing Demo</h1>
+          <p className="text-slate-400 text-sm">Timefold + Bryntum SchedulerPro integration</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -166,12 +194,21 @@ export default function HomePage() {
           <button
             onClick={handleSolve}
             className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-sm text-slate-950 disabled:opacity-40"
-            disabled={!baselineData || loading} //disable until data is loaded or solver is running
+            disabled={!baselineData || loading}
           >
             Solve schedule
           </button>
 
-          {/*toggle UI control for switching between baseline & solved views*/}
+          {/* Reset optimized result and go back to baseline */}
+          <button
+            onClick={handleResetSolution}
+            className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs text-slate-100 disabled:opacity-40"
+            disabled={!optimizedData && !baselineData}
+          >
+            Reset view
+          </button>
+
+          {/*toggle between baseline and optimized views*/}
           <div className="flex items-center gap-1 text-xs bg-slate-900 rounded-full px-1 py-1">
             <button
               className={`px-2 py-0.5 rounded-full ${
@@ -181,7 +218,6 @@ export default function HomePage() {
             >
               Baseline
             </button>
-
             <button
               className={`px-2 py-0.5 rounded-full ${
                 viewMode === 'optimized' ? 'bg-slate-700' : ''
@@ -206,14 +242,8 @@ export default function HomePage() {
               <KpiCard label="Vehicles" value={kpis.vehicleCount} />
               <KpiCard label="Visits" value={kpis.visitCount} />
               <KpiCard label="Scheduled" value={kpis.scheduledVisitCount} />
-              <KpiCard
-                label="Avg / Vehicle"
-                value={kpis.avgVisitsPerVehicle.toFixed(1)}
-              />
-              <KpiCard
-                label="Total Hours"
-                value={kpis.totalScheduledHours.toFixed(1)}
-              />
+              <KpiCard label="Avg / Vehicle" value={kpis.avgVisitsPerVehicle.toFixed(1)} />
+              <KpiCard label="Total Hours" value={kpis.totalScheduledHours.toFixed(1)} />
               <KpiCard
                 label="Time Span"
                 value={
@@ -227,20 +257,20 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/*main visualization section rendered by SchedulerView*/}
+      {/*main visualization section using bryntum scheduler*/}
       <section className="flex-1 min-h-0 px-6 py-4">
         <div className="h-full rounded-xl border border-slate-800 overflow-hidden bg-slate-900/40">
           <SchedulerView
             routePlan={currentData}
             onEventsChanged={handleEventsChanged}
-          /> {/*Main timeline with baseline/optimized*/}
+          />
         </div>
       </section>
     </main>
   );
 }
 
-// Simple KPI card component
+//kpi card component shown in top summary grid
 function KpiCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-center">
