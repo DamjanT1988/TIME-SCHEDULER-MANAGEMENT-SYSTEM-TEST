@@ -1,15 +1,109 @@
 //app/api/solve/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import type { RoutePlanData } from '@/types/timefold';
+import type { RoutePlanData, ModelInput, Visit, Vehicle } from '@/types/timefold';
 
 const BASE_URL = process.env.TIMEFOLD_BASE_URL!;
 const API_KEY = process.env.TIMEFOLD_API_KEY!;
-const CONFIG_ID = process.env.TIMEFOLD_CONFIG_ID!;
 
 //small helper to pause between polling attempts
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+//--- mock solver fallback --------------------------------------------------
+
+//very simple ISO-8601 duration parser for strings like "PT30M", "PT1H", "PT1H30M"
+function parseDurationToMs(duration: string | undefined): number {
+  if (!duration || !duration.startsWith('PT')) {
+    //default 30 minutes if missing or invalid format
+    return 30 * 60 * 1000;
+  }
+
+  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!match) {
+    return 30 * 60 * 1000;
+  }
+
+  const hours = parseInt(match[1] || '0', 10);
+  const minutes = parseInt(match[2] || '0', 10);
+  const seconds = parseInt(match[3] || '0', 10);
+
+  return ((hours * 60 + minutes) * 60 + seconds) * 1000;
+}
+
+/**
+ * Very dumb local “solver”:
+ * - iterate visits in given order
+ * - assign them round-robin to available shifts
+ * - schedule sequentially within each shift starting at minStartTime
+ */
+function mockSolveRoutePlan(modelInput: ModelInput): any {
+  const vehicles: Vehicle[] = modelInput.vehicles ?? [];
+  const visits: Visit[] = modelInput.visits ?? [];
+
+  //build list of all shifts with their current cursor time
+  const shiftState = vehicles.flatMap(vehicle =>
+    (vehicle.shifts ?? []).map(shift => ({
+      vehicleId: vehicle.id,
+      shiftId: shift.id,
+      cursor: new Date(shift.minStartTime).getTime(),
+      maxEnd: shift.maxEndTime ? new Date(shift.maxEndTime).getTime() : null,
+    })),
+  );
+
+  if (shiftState.length === 0) {
+    //nothing to schedule so return original modelInput as-is
+    return { modelInput };
+  }
+
+  let shiftIndex = 0;
+  const updatedVisits: Visit[] = [];
+
+  for (const visit of visits) {
+    const durationMs = parseDurationToMs(visit.serviceDuration);
+    const targetShift = shiftState[shiftIndex];
+
+    const startMs = targetShift.cursor;
+    const endMs = startMs + durationMs;
+
+    //respect maxEnd if defined, otherwise we keep stacking visits
+    if (targetShift.maxEnd && endMs > targetShift.maxEnd) {
+      targetShift.cursor = targetShift.maxEnd;
+    } else {
+      targetShift.cursor = endMs;
+    }
+
+    const startTime = new Date(startMs).toISOString();
+    const endTime = new Date(endMs).toISOString();
+
+    updatedVisits.push({
+      ...visit,
+      assignedVehicleShiftId: targetShift.shiftId,
+      startTime,
+      endTime,
+    });
+
+    //round-robin over shifts so load is somewhat spread
+    shiftIndex = (shiftIndex + 1) % shiftState.length;
+  }
+
+  const updatedModelInput: ModelInput = {
+    ...modelInput,
+    visits: updatedVisits,
+  };
+
+  return {
+    modelInput: updatedModelInput,
+    modelOutput: {
+      //trivial "score" / metadata for debugging
+      source: 'mockSolver',
+      visitCount: updatedVisits.length,
+      vehicleCount: vehicles.length,
+    },
+  };
+}
+
+//--------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,7 +118,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // First: send route plan request to timefold for solving
+    //send route plan request to timefold for solving
     const postRes = await fetch(`${BASE_URL}/route-plans`, {
       method: 'POST',
       headers: {
@@ -34,14 +128,13 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         config: {
           run: { name: 'Caire demo route plan' },
-          configurationId: CONFIG_ID,
         },
         modelInput,
       }),
     });
 
     if (!postRes.ok) {
-      //log raw error text to help debug solver failures
+      //Log raw error text to help debug solver failures
       const txt = await postRes.text();
       console.error('POST /route-plans failed:', txt);
       return NextResponse.json(
@@ -60,10 +153,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Start polling loop until timefold reports a completed status
+    //start polling loop until timefold reports a completed status
     let attempts = 0;
     let finalPlan: any = null;
-    const maxAttempts = 20;
+    //give solver up to ~2 minutes: 60 attempts * 2s
+    const maxAttempts = 60;
 
     while (attempts < maxAttempts) {
       attempts++;
@@ -79,11 +173,29 @@ export async function POST(req: NextRequest) {
       }
 
       const meta = await metaRes.json();
-      const status = meta.status ?? meta.state ?? meta.solverStatus;
+      const solverStatus: string | undefined =
+        meta.solverStatus ?? meta.status ?? meta.state;
 
-      //Check completion states returned by timefold
-      if (status === 'COMPLETED' || status === 'TERMINATED_EARLY') {
-        // fetch full optimized route plan now
+      console.log('Timefold metadata =', JSON.stringify(meta, null, 2));
+      console.log('Timefold solverStatus =', solverStatus);
+
+      //If dataset is invalid (eg out-of-coverage locations), fall back to mock solver
+      if (solverStatus === 'DATASET_INVALID') {
+        console.warn('Timefold dataset invalid, using mock solver instead.');
+
+        const mocked = mockSolveRoutePlan(modelInput);
+
+        const routePlan: RoutePlanData = {
+          modelInput: mocked.modelInput,
+          modelOutput: mocked.modelOutput,
+        };
+
+        return NextResponse.json(routePlan);
+      }
+
+      //normal completion / failure statuses
+      if (solverStatus === 'SOLVING_COMPLETED' || solverStatus === 'SOLVING_FAILED') {
+        //fetch full optimized route plan now (best solution)
         const planRes = await fetch(`${BASE_URL}/route-plans/${id}`, {
           headers: { 'X-API-KEY': API_KEY },
           cache: 'no-store',
@@ -100,17 +212,41 @@ export async function POST(req: NextRequest) {
       await sleep(2000);
     }
 
+    //as a fallback, if polling loop ended without finalPlan,
+    //try once to get whatever current solution exists
     if (!finalPlan) {
-      return NextResponse.json(
-        { error: 'Solver did not complete in time' },
-        { status: 500 },
-      );
+      try {
+        const planRes = await fetch(`${BASE_URL}/route-plans/${id}`, {
+          headers: { 'X-API-KEY': API_KEY },
+          cache: 'no-store',
+        });
+        if (planRes.ok) {
+          finalPlan = await planRes.json();
+        }
+      } catch (e) {
+        console.error('Fallback plan fetch failed:', e);
+      }
     }
 
-    // Timefold usually returns both modelInput + modelOutput here
+    if (!finalPlan) {
+      //as extra-safe fallback, also use the mock solver here
+      console.warn('Solver did not complete in time, using mock solver.');
+      const mocked = mockSolveRoutePlan(modelInput);
+
+      const routePlan: RoutePlanData = {
+        modelInput: mocked.modelInput,
+        modelOutput: mocked.modelOutput,
+      };
+
+      return NextResponse.json(routePlan);
+    }
+
+    //timefold usually returns both modelInput + modelOutput here
     const routePlan: RoutePlanData = {
-      modelInput: finalPlan.modelInput ?? modelInput, //normalize if backend wraps differently
-      modelOutput: finalPlan.modelOutput ?? finalPlan, //fallback to entire obj for debugging
+      //normalized so front-end can always read .modelInput
+      modelInput: finalPlan.modelInput ?? modelInput,
+      //keep full output for debugging / KPIs and later sanitycheck
+      modelOutput: finalPlan.modelOutput ?? finalPlan,
     };
 
     return NextResponse.json(routePlan);
