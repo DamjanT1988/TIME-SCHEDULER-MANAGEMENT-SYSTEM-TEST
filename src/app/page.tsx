@@ -172,10 +172,25 @@ export default function HomePage() {
   //determine which dataset to feed into scheduler
   const currentData = viewMode === 'baseline' ? baselineData : optimizedData;
 
-  //compute KPIs based on current dataset
+  //compute kpis based on current dataset
   const baselineKpis: KPIs | null = computeKpis(baselineData?.modelInput ?? null);
   const optimizedKpis: KPIs | null = computeKpis(optimizedData?.modelInput ?? null);
   const kpis: KPIs | null = viewMode === 'baseline' ? baselineKpis : optimizedKpis;
+
+  //bonus: kpi deltas (how much better is optimized vs baseline)
+  const showDeltas = Boolean(baselineKpis && optimizedKpis && viewMode === 'optimized');
+  const scheduledDelta =
+    showDeltas && baselineKpis && optimizedKpis
+      ? optimizedKpis.scheduledVisitCount - baselineKpis.scheduledVisitCount
+      : null;
+  const avgPerVehicleDelta =
+    showDeltas && baselineKpis && optimizedKpis
+      ? optimizedKpis.avgVisitsPerVehicle - baselineKpis.avgVisitsPerVehicle
+      : null;
+  const totalHoursDelta =
+    showDeltas && baselineKpis && optimizedKpis
+      ? optimizedKpis.totalScheduledHours - baselineKpis.totalScheduledHours
+      : null;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
@@ -233,7 +248,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* section for showing status and KPIs */}
+      {/* section for showing status and kpis */}
       <section className="px-6 py-3 border-b border-slate-800">
         <div className="flex flex-col gap-3">
           <p className="text-xs text-slate-400">
@@ -244,9 +259,21 @@ export default function HomePage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <KpiCard label="Vehicles" value={kpis.vehicleCount} />
               <KpiCard label="Visits" value={kpis.visitCount} />
-              <KpiCard label="Scheduled" value={kpis.scheduledVisitCount} />
-              <KpiCard label="Avg / Vehicle" value={kpis.avgVisitsPerVehicle.toFixed(1)} />
-              <KpiCard label="Total Hours" value={kpis.totalScheduledHours.toFixed(1)} />
+              <KpiCard
+                label="Scheduled"
+                value={kpis.scheduledVisitCount}
+                delta={scheduledDelta}
+              />
+              <KpiCard
+                label="Avg / Vehicle"
+                value={kpis.avgVisitsPerVehicle.toFixed(1)}
+                delta={avgPerVehicleDelta}
+              />
+              <KpiCard
+                label="Total Hours"
+                value={kpis.totalScheduledHours.toFixed(1)}
+                delta={totalHoursDelta}
+              />
               <KpiCard
                 label="Time Span"
                 value={
@@ -269,15 +296,22 @@ export default function HomePage() {
               onChange={e => setSchedulerHeight(Number(e.target.value))}
               className="w-40"
             />
-            <span></span>
+            <span>{schedulerHeight}vh</span>
           </div>
+
+          {/* tiny helper line for keyboard shortcuts */}
+          <p className="text-[10px] text-slate-500">
+            Shortcuts: <span className="font-semibold text-slate-300">B</span> = Baseline,&nbsp;
+            <span className="font-semibold text-slate-300">O</span> = Optimized,&nbsp;
+            <span className="font-semibold text-slate-300">R</span> = Re-solve.
+          </p>
         </div>
       </section>
 
       {/*main visualization section using bryntum scheduler*/}
       <section
         className="px-6 py-4"
-        style={{ height: `${schedulerHeight}vh` }}
+        style={{ height: `${schedulerHeight}vh` }} //height now adjustable
       >
         <div className="h-full rounded-xl border border-slate-800 overflow-hidden bg-slate-900/40">
           <SchedulerView
@@ -291,11 +325,40 @@ export default function HomePage() {
 }
 
 //kpi card component shown in top summary grid
-function KpiCard({ label, value }: { label: string; value: string | number }) {
+function KpiCard({
+  label,
+  value,
+  delta,
+}: {
+  label: string;
+  value: string | number;
+  delta?: number | null;
+}) {
+  //generic small formatter for deltas
+  const hasDelta = typeof delta === 'number' && !Number.isNaN(delta) && delta !== 0;
+  let deltaText = '';
+  if (hasDelta && typeof delta === 'number') {
+    const abs = Math.abs(delta);
+    const decimals = abs < 10 ? 1 : 0;
+    deltaText = `${delta > 0 ? '+' : '-'}${abs.toFixed(decimals)}`;
+  }
+
+  const deltaClass =
+    !hasDelta || typeof delta !== 'number'
+      ? ''
+      : delta < 0
+      ? 'text-emerald-400'
+      : 'text-rose-400';
+
   return (
     <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-center">
       <div className="text-xs text-slate-400">{label}</div>
       <div className="font-semibold text-lg mt-1">{value}</div>
+      {hasDelta && (
+        <div className={`mt-0.5 text-[10px] ${deltaClass}`}>
+          {deltaText}
+        </div>
+      )}
     </div>
   );
 }
