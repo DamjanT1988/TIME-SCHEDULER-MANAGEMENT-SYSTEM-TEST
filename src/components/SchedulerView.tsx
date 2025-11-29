@@ -1,12 +1,12 @@
-//src/components/SchedulerView.tsx
+//src/components/SchedulerView.tsx  //scheduler view that renders timefold data in bryntum
 'use client';
 
 import { useMemo } from 'react';
 import type { RoutePlanData, ModelInput } from '@/types/timefold';
-// use dynamic import so Bryntum only loads on the client
+//use dynamic import so bryntum only loads on the client
 import dynamic from 'next/dynamic';
 
-// dynamically import Bryntum so it only runs on client side, avoids ssr issues
+//dynamically import bryntum so it only runs on client side, avoids ssr issues
 const BryntumSchedulerPro = dynamic(
   () =>
     import('@bryntum/schedulerpro-react').then(
@@ -15,37 +15,38 @@ const BryntumSchedulerPro = dynamic(
   { ssr: false },
 );
 
-// simple resource record used by Bryntum Scheduler
+//simple resource record used by bryntum scheduler
 interface ResourceRecord {
-  id: string;      // row id in scheduler (vehicle id or shift id depending on mode)
-  name: string;    // technician name (may include shift label)
+  id: string;      //row id in scheduler (vehicle id or shift id depending on mode)
+  name: string;    //technician name (may include shift label)
   vehicleId: string;
 }
 
-// small event structure that maps visits to time slots
-// NOTE: use Date objects so scheduler can work with them directly
+//small event structure that maps visits to time slots
+//note: use Date objects so scheduler can work with them directly
 interface EventRecord {
   id: string;
-  resourceId: string; // row id (vehicle or shift, depending on mode)
+  resourceId: string; //row id (vehicle or shift, depending on mode)
   name: string;
   startDate: Date;
   endDate: Date;
 }
 
-// palette + helpers to give each technician (resource) a stable color
+//palette and helpers to give each technician a stable color
 const palette = [
-  '#16a34a', // green
-  '#4f46e5', // indigo
-  '#2563eb', // blue
-  '#0d9488', // teal
-  '#ea580c', // orange
-  '#7c3aed', // purple
-  '#db2777', // pink
-  '#ca8a04', // amber
-  '#dc2626', // red
-  '#0891b2', // cyan
+  '#16a34a', //green
+  '#4f46e5', //indigo
+  '#2563eb', //blue
+  '#0d9488', //teal
+  '#ea580c', //orange
+  '#7c3aed', //purple
+  '#db2777', //pink
+  '#ca8a04', //amber
+  '#dc2626', //red
+  '#0891b2', //cyan
 ];
 
+//simple hash based on resource id so each tech gets a repeatable index
 function colorIndexForResource(resourceId: string): number {
   let hash = 0;
   for (let i = 0; i < resourceId.length; i++) {
@@ -54,11 +55,12 @@ function colorIndexForResource(resourceId: string): number {
   return Math.abs(hash) % palette.length;
 }
 
+//lookup actual hex color for a given resource id
 function colorForResource(resourceId: string): string {
   return palette[colorIndexForResource(resourceId)];
 }
 
-// simple lightening helper for gradients
+//simple lightening helper for building gradients
 function lighten(hex: string, factor: number): string {
   const clean = hex.replace('#', '');
   const num = parseInt(clean, 16);
@@ -74,20 +76,20 @@ function lighten(hex: string, factor: number): string {
   return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
 }
 
-// -----------------------------------------------------------------------------
-// RESOURCE / EVENT BUILDERS
-// shiftViewMode = 1  => one row per technician (vehicle)
-// shiftViewMode > 1  => one row per shift (original behaviour, all shifts visible)
-// -----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//resource / event builders
+//shiftViewMode = 1  => one row per technician (vehicle)
+//shiftViewMode > 1  => one row per shift (original behaviour, all shifts visible)
+//-----------------------------------------------------------------------------
 
-// technician view: one row per vehicle
+//technician view: one row per vehicle
 function buildTechResources(modelInput: ModelInput): ResourceRecord[] {
   const resources: ResourceRecord[] = [];
 
   for (const vehicle of modelInput.vehicles ?? []) {
     resources.push({
-      id: vehicle.id,                    // row id = vehicle
-      name: vehicle.name ?? vehicle.id,  // technician name
+      id: vehicle.id,                   //row id = vehicle
+      name: vehicle.name ?? vehicle.id, //technician name
       vehicleId: vehicle.id,
     });
   }
@@ -95,14 +97,14 @@ function buildTechResources(modelInput: ModelInput): ResourceRecord[] {
   return resources;
 }
 
-// shift view: one row per shift (may show a vehicle multiple times)
+//shift view: one row per shift (a vehicle may appear multiple times)
 function buildShiftResources(modelInput: ModelInput): ResourceRecord[] {
   const resources: ResourceRecord[] = [];
 
   for (const vehicle of modelInput.vehicles ?? []) {
     for (const shift of vehicle.shifts ?? []) {
       resources.push({
-        id: shift.id,                    // row id = shift
+        id: shift.id,                   //row id = shift
         name: vehicle.name ?? vehicle.id,
         vehicleId: vehicle.id,
       });
@@ -112,7 +114,7 @@ function buildShiftResources(modelInput: ModelInput): ResourceRecord[] {
   return resources;
 }
 
-// technician view events: map all shift ids to their vehicle row
+//technician view events: map all shift ids to the vehicle row
 function buildTechEvents(modelInput: ModelInput): {
   events: EventRecord[];
   minStart: Date | null;
@@ -122,7 +124,7 @@ function buildTechEvents(modelInput: ModelInput): {
   let minStart: number | null = null;
   let maxEnd: number | null = null;
 
-  // map shiftId -> vehicleId
+  //map shiftId -> vehicleId so we can group all shifts into one tech row
   const shiftToVehicle = new Map<string, string>();
   for (const vehicle of modelInput.vehicles ?? []) {
     for (const shift of vehicle.shifts ?? []) {
@@ -132,6 +134,7 @@ function buildTechEvents(modelInput: ModelInput): {
 
   for (const visit of modelInput.visits ?? []) {
     if (!visit.assignedVehicleShiftId || !visit.startTime || !visit.endTime) {
+      //if visit is not scheduled we skip it for this view
       continue;
     }
 
@@ -150,7 +153,7 @@ function buildTechEvents(modelInput: ModelInput): {
 
     events.push({
       id: visit.id,
-      resourceId: vehicleId, // row = technician
+      resourceId: vehicleId, //row = technician
       name: visit.name ?? visit.id,
       startDate: start,
       endDate: end,
@@ -164,7 +167,7 @@ function buildTechEvents(modelInput: ModelInput): {
   };
 }
 
-// shift view events: resourceId is the actual shiftId
+//shift view events: resourceId is the actual shiftId
 function buildShiftEvents(modelInput: ModelInput): {
   events: EventRecord[];
   minStart: Date | null;
@@ -176,6 +179,7 @@ function buildShiftEvents(modelInput: ModelInput): {
 
   for (const visit of modelInput.visits ?? []) {
     if (!visit.assignedVehicleShiftId || !visit.startTime || !visit.endTime) {
+      //unscheduled visits are ignored in the gantt timeline
       continue;
     }
 
@@ -190,7 +194,7 @@ function buildShiftEvents(modelInput: ModelInput): {
 
     events.push({
       id: visit.id,
-      resourceId: visit.assignedVehicleShiftId, // row = shift
+      resourceId: visit.assignedVehicleShiftId, //row = shift
       name: visit.name ?? visit.id,
       startDate: start,
       endDate: end,
@@ -204,18 +208,18 @@ function buildShiftEvents(modelInput: ModelInput): {
   };
 }
 
-// -----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 
 interface SchedulerViewProps {
   routePlan: RoutePlanData | null;
-  // allow parent to be notified when events are moved (drag & drop)
+  //allow parent to be notified when events are moved (drag and drop)
   onEventsChanged?: (updates: {
     id: string;
     resourceId: string;
     startDate: Date;
     endDate: Date;
   }[]) => void;
-  // NEW: controls whether we show 1 row per technician or per-shift rows
+  //controls whether we show one row per technician or per-shift rows
   shiftViewMode?: 1 | 2 | 3 | 4;
 }
 
@@ -224,12 +228,14 @@ export default function SchedulerView({
   onEventsChanged,
   shiftViewMode = 1,
 }: SchedulerViewProps) {
+  //when true, each row = technician, otherwise row = individual shift
   const showPerTechnician = shiftViewMode === 1;
 
-  // Compute Bryntum resources/events only when plan or mode changes
+  //Compute bryntum resources/events only when plan or mode changes
   const { resources, events, startDate, endDate } = useMemo(() => {
     if (!routePlan) {
       const now = new Date();
+      //fallback window for empty state so scheduler still mounts
       return {
         resources: [] as ResourceRecord[],
         events: [] as EventRecord[],
@@ -248,7 +254,7 @@ export default function SchedulerView({
       ? buildTechResources(modelInput)
       : buildShiftResources(modelInput);
 
-    // Time range is based on event span if possible, otherwise shift windows
+    //time range is based on event span if possible, otherwise shift windows
     let s: Date;
     let e: Date;
 
@@ -270,6 +276,7 @@ export default function SchedulerView({
       e = new Date(endDateStr);
     }
 
+    //helps to avoid rerenderingtoo much when data shape has not changed
     return {
       resources,
       events,
@@ -279,6 +286,7 @@ export default function SchedulerView({
   }, [routePlan, showPerTechnician]);
 
   if (!routePlan) {
+    //simple empty state if no data has been loaded yet
     return (
       <div className="h-full flex items-center justify-center text-slate-500 text-sm">
         Load demo data to see the schedule.
@@ -286,7 +294,7 @@ export default function SchedulerView({
     );
   }
 
-  // Render Bryntum Scheduler with processed data
+  //render bryntum scheduler with processed data
   return (
     <BryntumSchedulerPro
       barMargin={6}
@@ -300,9 +308,13 @@ export default function SchedulerView({
       columns={[
         { type: 'resourceInfo', text: 'Technician', width: 220 },
       ]}
-      // Stylish pill-shaped events with per-row colors
+      //stylish pill-shaped events with per-technician colors
       eventRenderer={({ eventRecord }: any) => {
-        const base = colorForResource(eventRecord.resourceId);
+        //look up the resource to get the technician (vehicle) id
+        const resource = resources.find(r => r.id === eventRecord.resourceId);
+        const colorKey = resource?.vehicleId ?? eventRecord.resourceId;
+
+        const base = colorForResource(colorKey);
         const lighter = lighten(base, 0.25);
 
         return {
@@ -325,9 +337,17 @@ export default function SchedulerView({
           `,
         };
       }}
-      // propagate drag-and-drop changes back to parent
-      onEventDrop={({ events: droppedEvents }: any) => {
+      //propagate drag-and-drop chages back to parent
+      onEventDrop={(params: any) => {
         if (!onEventsChanged) return;
+
+        //bryntum typically passes { eventRecords, ... } as the main payload
+        const raw = params?.eventRecords ?? params?.events ?? [];
+        const droppedEvents = Array.isArray(raw) ? raw : Array.from(raw ?? []);
+
+        if (!droppedEvents.length) {
+          return;
+        }
 
         const updates = droppedEvents.map((e: any) => ({
           id: e.id,
@@ -335,6 +355,8 @@ export default function SchedulerView({
           startDate: e.startDate,
           endDate: e.endDate,
         }));
+
+        //let the parent page decide how to sync these udates back to modelInput
         onEventsChanged(updates);
       }}
     />
