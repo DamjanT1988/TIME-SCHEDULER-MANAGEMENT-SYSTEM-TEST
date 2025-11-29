@@ -1,7 +1,6 @@
-
 # CAIRE Field Service Routing Demo
 
-This project implements the CAIRE full-stack work sample using Next.js, TypeScript, Timefold.ai, and Bryntum SchedulerPro. It demonstrates baseline schedule visualization, optimization through the Timefold Route Plans API, KPI calculations, drag-and-drop edits, adjustable layout modes, robust fallback solver logic, and improved UI/UX structure. GitHub Copilot and ChatGPT were used to accelerate development, as encouraged in the assignment.
+This project implements the CAIRE full-stack work sample using Next.js, TypeScript, Timefold.ai, Bryntum SchedulerPro, and React Leaflet. It demonstrates baseline schedule visualization, optimization through the Timefold Route Plans API, KPI calculations, drag-and-drop edits, adjustable layout modes, fallback solver logic, and a geographic map layer showing all visits colored per technician. GitHub Copilot and ChatGPT were used to accelerate development, as encouraged in the assignment.
 
 -----------------------------------------------------------------------
 
@@ -11,187 +10,154 @@ This project implements the CAIRE full-stack work sample using Next.js, TypeScri
 - Next.js (App Router)
 - React client components
 - TailwindCSS for layout and styling
-- Bryntum SchedulerPro (loaded via client-side dynamic import to avoid SSR issues)
-- KPI calculation utilities (`utils/kpis.ts`)
-- Technician and Shift view logic for multi-row resource modes
+- Bryntum SchedulerPro for schedule visualization (client-side dynamic import)
+- React Leaflet map integration for geographic visualization of visits
+- KPI utilities (`utils/kpis.ts`)
+- Technician and Shift view modes (1 or 4 rows per technician)
 
 ### Backend (Next.js API Routes)
-- `/api/demo-data`  
-  Loads a fresh Timefold-compatible `modelInput` dataset. This data contains visits, locations, vehicles, and shifts, but without assignments (consistent with the assignment requirements).
-
-- `/api/solve`  
-  Sends `modelInput` to Timefold Route Plans API.  
-  Implements:
-  - Metadata polling
-  - Handling of all solver states (`SOLVING_*`, `COMPLETED`, `FAILED`, `DATASET_INVALID`)
-  - Automatic failover to a mock solver when the dataset cannot be solved by Timefold.
+- `/api/demo-data` – loads a fresh Timefold-compatible `modelInput` demo dataset
+- `/api/solve` – sends data to Timefold Route Plans API, polls metadata, and handles all solver states including `DATASET_INVALID`
+- Mock solver used when dataset cannot be solved by Timefold
 
 ### Data Flow
-1. User loads demo data  
+1. Load demo data  
 2. Scheduler renders baseline (unscheduled input)  
-3. User may modify visits by drag-and-drop  
-4. On solving, frontend sends updated `modelInput`  
-5. Backend polls Timefold or falls back to a mock solver  
-6. Optimized schedule and KPIs update  
-7. User switches between:  
+3. User adjusts visits via drag-and-drop  
+4. User clicks Solve → backend polls Timefold  
+5. If Timefold rejects (`DATASET_INVALID`), mock solver runs  
+6. Optimized result displayed alongside KPIs  
+7. User toggles between:
    - Baseline vs Optimized  
-   - 1 or 4 rows per technician  
-   - Variable scheduler height  
+   - 1–4 shift rows  
+   - Adjustable scheduler height  
+   - Map view  
+-----------------------------------------------------------------------
+
+## React Leaflet Map
+
+A lightweight map implementation shows all visits on a geographic map:
+- One marker per visit  
+- Marker color matches technician color from the Scheduler  
+- Uses `DynamicMapInner` with `ssr:false` to avoid Leaflet SSR issues  
+- Automatically updates when baseline / optimized data changes  
+- Handles missing or invalid coordinates gracefully  
+- Displays message: “No visits with valid coordinates to display”  
 
 -----------------------------------------------------------------------
 
 ## Handling Timefold `DATASET_INVALID`
 
-Timefold’s routing solver only supports certain geographic regions based on its routing graph.  
-Because the provided demo dataset contains coordinates **outside supported bounds**, Timefold responds with:
+Timefold's routing solver validates input coordinates against its internal map graph.  
+The assignment dataset contains coordinates *outside supported coverage*, so Timefold returns:
 
 ```
 solverStatus = DATASET_INVALID
 ```
 
-Since this is expected for the assignment dataset, a **mock fallback solver** is implemented:
-- Assigns visits to shifts or technicians
-- Generates start and end times
-- Returns a fully valid `modelOutput`
-- Preserves correct structure so the frontend UI behaves exactly as if Timefold had returned a real result
+Because this is expected, a **mock solver** is implemented:
+- Assigns visits to shifts  
+- Generates start and end times  
+- Produces a valid `modelOutput` structure  
+- Ensures the entire UI workflow remains functional  
 
-This guarantees:
-- The UI always works
-- Baseline/optimized switching works
-- KPIs calculate normally
-- Drag-and-drop scheduling remains meaningful
+This allows all assignment features to be demonstrated even when the real solver cannot compute a plan.
 
 -----------------------------------------------------------------------
 
 ## Error Handling
 
-The application contains robust detection and handling for all solver states and runtime anomalies:
+### Frontend
+- All solver and network issues displayed through `statusMessage`
+- Robust guarding around all derived structures to prevent undefined access
+- Graceful fallback when:
+  - No data loaded  
+  - Invalid solver response  
+  - Network failure  
+  - Invalid coordinates  
 
-### Frontend Error Handling
-- Errors surfaced through `statusMessage`
-- Graceful fallbacks when:
-  - No demo data loaded
-  - Solver response is invalid
-  - Network errors occur
-- UI never crashes due to missing or partial fields because all derived structures are `useMemo`-guarded.
-
-### Backend Error Handling
-- Logs details from Timefold’s API responses, including full metadata traces
+### Backend
 - Distinguishes between:
-  - Transport/network errors
-  - Timefold internal failures
-  - Schema validation errors
-  - Dataset coverage errors
-- Automatically retries via polling with a configurable timeout
-- Falls back to mock solver when:
-  - Solver does not complete
-  - `DATASET_INVALID`
-  - Unexpected metadata states
-
-This aligns with expected production behavior for SaaS or internal routing tools.
+  - Transport/network errors  
+  - Timefold validation errors  
+  - Metadata polling timeouts  
+  - Internal solver states  
+- Automatically falls back to mock solver to maintain UX continuity  
 
 -----------------------------------------------------------------------
 
 ## Minor Testing
 
-Although no formal automated tests were required, the following manual tests were performed:
+### Functional Tests
+- Demo dataset loads correctly  
+- Baseline and optimized switching validated  
+- Drag-and-drop editing updates visit assignments  
+- KPI deltas recalculated correctly  
+- Multi-row (shift) view tested  
+- Height slider validates layout in various screen sizes  
+- Map tested with valid/invalid coordinates  
 
-### 1. Demo Data Load Test
-- Verified that raw modelInput loads correctly
-- Confirmed baseline view renders without errors
-
-### 2. Solver Path Tests
-- Timefold reachable → metadata polls until `DATASET_INVALID`
-- Timefold unreachable → fallback solver returns valid modelOutput
-- Both paths render correctly in UI
-
-### 3. Drag-and-Drop Functionality
-- Moving a visit updates:
-  - Assigned resource (technician or shift)
-  - Start time
-  - End time
-- UI indicates schedule has changed  
-- Re-solving updates optimized view correctly
-
-### 4. Baseline / Optimized Switching
-- Verified data separation between baseline and optimized views
-- Confirmed KPIs recalculate correctly for each view
-
-### 5. Multi-Shift Rendering
-- Technician mode (1 row per tech)
-- Shift mode (multiple rows per tech)
-- Tested color consistency across shifts
-
-### 6. Height Adjustment and Layout
-- Scheduler height slider tested for all values from 40–90vh
-- Ensured layout does not overflow or break on narrow screens
+### Degradation Tests
+- Timefold unreachable → mock solver works  
+- Dataset invalid → mock solver works  
+- UI remains stable with missing fields  
 
 -----------------------------------------------------------------------
 
 ## How to Run
 
 ### Requirements
-- Node.js 18 or later
-- No external APIs required at runtime (fallback covers Timefold failures)
+- Node.js 18+  
+- No external services required at runtime (mock solver ensures stability)
 
-### Install Dependencies
+### Install
 ```
 npm install
 ```
 
-### Start Development Server
+### Run
 ```
 npm run dev
 ```
 
-### Access the App
+### Open in browser
 ```
 http://localhost:3000
 ```
-
-### Usage Steps
-1. Click **Load demo data**  
-2. Review technician and shift rows  
-3. Drag events freely to modify schedule  
-4. Click **Solve schedule**  
-5. Compare baseline and optimized KPIs  
-6. Switch between 1–4 shift rows per technician  
-7. Adjust schedule height for denser or broader timeline view  
 
 -----------------------------------------------------------------------
 
 ## Bonus Features Implemented
 
-- KPI dashboard with before/after deltas  
+- KPI dashboard with delta comparison  
 - Drag-and-drop rescheduling  
-- Adjustable scheduler height slider  
+- Adjustable height slider  
 - Keyboard shortcuts (B, O, R)  
-- Technician view & multi-shift mode (1–4 rows per tech)  
-- Elegant gradient event styling   
-- Stable color mapping per technician  
+- Technician and Shift view modes  
+- Styled pill-shaped gradient events  
+- Stable per-technician color mapping  
+- Full React Leaflet map of all visits  
 - Automatic fallback solver  
-- Extensive error handling and warnings  
-- Clean, well-structured code with clear documentation  
-- Air-tight README written professionally  
-- AI-assisted development (Copilot + ChatGPT) documented transparently  
+- Strong error handling  
+- Polished README  
+- AI-assisted development  
 
 -----------------------------------------------------------------------
 
 ## Use of AI Tools
 
 GitHub Copilot and ChatGPT were used for:
-- Boilerplate scaffolding
-- TypeScript strictness checks
-- Refactoring SchedulerView logic
-- Improving Bryntum integration
-- Generating consistent gradient color styling
-- Documenting architecture
-- Creating this README
+- Boilerplate
+- TypeScript corrections
+- Bryntum Scheduler integrations
+- Leaflet SSR-safe setup
+- Fallback solver logic
+- README writing
 
-This usage is disclosed as required and aligns with industry-standard workflows.
+Usage is disclosed as required by the assignment.
 
 -----------------------------------------------------------------------
 
-## The Author
+## Author
 
 Created by **Damjan Tosic**, with AI assistance, as part of the CAIRE technical assignment.
