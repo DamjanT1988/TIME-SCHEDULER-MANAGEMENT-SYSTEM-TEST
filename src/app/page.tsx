@@ -94,10 +94,45 @@ export default function HomePage() {
     }
   };
 
+  // 🔥 handle drag-and-drop edits coming from SchedulerView
+  const handleEventsChanged = (updates: {
+    id: string;
+    resourceId: string;
+    startDate: Date;
+    endDate: Date;
+  }[]) => {
+    let data = viewMode === 'baseline' ? baselineData : optimizedData;
+    if (!data) return;
+
+    const updatedVisits = data.modelInput.visits.map(v => {
+      const up = updates.find(u => u.id === v.id);
+      if (!up) return v;
+      return {
+        ...v,
+        assignedVehicleShiftId: up.resourceId,
+        startTime: up.startDate.toISOString(),
+        endTime: up.endDate.toISOString(),
+      };
+    });
+
+    const newModelInput = {
+      ...data.modelInput,
+      visits: updatedVisits,
+    };
+
+    if (viewMode === 'baseline') {
+      setBaselineData({ ...data, modelInput: newModelInput });
+    } else {
+      setOptimizedData({ ...data, modelInput: newModelInput });
+    }
+
+    setStatusMessage('Schedule updated. Press Solve to re-optimize.');
+  };
+
   //decide which dataset to render inside SchedulerView
   const currentData = viewMode === 'baseline' ? baselineData : optimizedData;
 
-  // --- KPI computation (Bons step 1) ---
+  // --- KPI computation (Bonus step 1) ---
   const baselineKpis: KPIs | null = computeKpis(
     baselineData?.modelInput ?? null,
   );
@@ -195,7 +230,10 @@ export default function HomePage() {
       {/*main visualization section rendered by SchedulerView*/}
       <section className="flex-1 min-h-0 px-6 py-4">
         <div className="h-full rounded-xl border border-slate-800 overflow-hidden bg-slate-900/40">
-          <SchedulerView routePlan={currentData} /> {/*Main timeline with baseline/optimized*/}
+          <SchedulerView
+            routePlan={currentData}
+            onEventsChanged={handleEventsChanged}
+          /> {/*Main timeline with baseline/optimized*/}
         </div>
       </section>
     </main>
