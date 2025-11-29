@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+//Bryntum CSS
+import '@bryntum/schedulerpro/schedulerpro.stockholm.css';
 import "./globals.css";
 
 const geistSans = Geist({
